@@ -1,3 +1,14 @@
+# Validation — 0.2.0
+
+Validated on 2026-10-22 on the same Apple Silicon environment described below.
+
+- Seven automated tests passed: original timing/protection and missing-input checks, strict exit codes and dimension mismatch, corrupt media, missing ffprobe, missing/non-finite timestamps, and failure-log preservation.
+- Generated two-color video: 2 scenes and 6 representative images; execution record completed and tool log saved.
+- Local MLX Whisper: synthetic English sentence transcribed successfully with existing local weights; execution record completed and tool log saved. No model download or paid API request.
+- This release does not claim Windows/Linux validation or a general recognition accuracy benchmark.
+
+## Previous version validation
+
 # Validation — 0.1.0
 
 Validated on 2026-10-21 on an Apple Silicon Mac. The wrapper scripts ran with Python 3.9; installed PySceneDetect 0.7.2 ran in its own Python 3.12 environment. FFmpeg 6.0 was available. No private source media was used.
