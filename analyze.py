@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local scene detection and offline speech transcription. Python 3.9+."""
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -44,18 +45,25 @@ def main():
                '--word-timestamps', 'True', '--task', 'transcribe', '--condition-on-previous-text', 'False', '--verbose', 'False']
         if a.language != 'auto':
             cmd += ['--language', a.language]
-    out.mkdir(parents=True, exist_ok=False)
-    manifest = {'input': str(source), 'mode': a.mode, 'command': cmd, 'status': 'running', 'speech_offline': a.mode == 'speech'}
+    try:
+        out.mkdir(parents=True, exist_ok=False)
+    except OSError as exc:
+        p.exit(1, 'Cannot create output directory: ' + str(exc) + '\n')
+    manifest = {'input': str(source), 'mode': a.mode, 'command': cmd, 'status': 'running', 'started_at': datetime.now(timezone.utc).isoformat(), 'log': 'tool.log', 'speech_offline': a.mode == 'speech'}
     record = out / 'execution.json'
     def save():
         record.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
     save()
     try:
-        r = subprocess.run(cmd, env=env, check=False)
+        print('Running tool; output is being saved to ' + str(out / 'tool.log'), flush=True)
+        with (out / 'tool.log').open('x', encoding='utf-8') as log:
+            r = subprocess.run(cmd, env=env, check=False, stdout=log, stderr=subprocess.STDOUT)
         manifest.update(status='complete' if r.returncode == 0 else 'failed', returncode=r.returncode)
     except (OSError, KeyboardInterrupt) as exc:
         manifest.update(status='failed', error=str(exc), returncode=130 if isinstance(exc, KeyboardInterrupt) else 1)
+    manifest['finished_at'] = datetime.now(timezone.utc).isoformat()
     save()
+    print('Status: ' + manifest['status'] + '; see execution.json and tool.log in ' + str(out))
     return manifest['returncode']
 
 
