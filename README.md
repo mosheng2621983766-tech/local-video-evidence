@@ -2,14 +2,14 @@
 
 本地视频取证小工具：镜头切分、关键帧导出、离线语音转写，以及逐帧时间戳检查。
 
-A small CLI toolkit for local shot detection, keyframe export, offline speech transcription, and video timestamp comparison. Initial public version: **0.1.0**.
+A small CLI toolkit for local shot detection, keyframe export, offline speech transcription, and video timestamp comparison. Version: **0.2.0**.
 
 ## 功能 / Features
 
 - `analyze.py scenes`: 调用 PySceneDetect 自适应检测，输出镜头 CSV 和每个镜头的代表帧。
 - `analyze.py speech`: 调用 MLX Whisper，使用你已经下载的本地模型，输出字幕、文字和时间戳。
 - `video_check.py`: 用 ffprobe 检查画幅、帧数、逐帧时间戳、音轨数量和旋转信息，可比较两个视频。
-- 已存在的输出目录或报告不会被覆盖；处理记录写入 `execution.json`。
+- 已存在的输出目录或报告不会被覆盖；处理记录及开始/结束时间写入 `execution.json`，外部工具输出保存到 `tool.log`。
 
 这些脚本是第三方工具的轻量封装，不是新的检测或语音模型。自动识别结果需要人工复核。时间戳一致不代表人物动作、画面或声音内容一致。
 
@@ -40,6 +40,16 @@ python video_check.py input.mp4 --output-video processed.mp4 --report results/co
 
 `video_check.py` 的退出码表示报告是否成功生成。比较是否通过请读取报告中的 `checks.timing_pass` 和 `checks.same_dimensions`；比较失败仍会成功生成报告。相对时间戳允许 1 毫秒误差，忽略两个视频的整体起始时间偏移。单帧视频不支持时间间隔判断。
 
+如需在批处理或自动检查中检测失败，增加 `--strict`：
+
+```sh
+python video_check.py input.mp4 --output-video processed.mp4 --report results/strict-check.json --strict
+```
+
+严格模式仍会保存报告；时间戳或画幅不一致时返回退出码 **3**，通过为 **0**。运行错误为 **1**，参数错误或报告已存在为 **2**。`--strict` 必须与 `--output-video` 一起使用，不检查音频内容或视觉质量。
+
+分析任务不再把外部工具进度直接打印到终端，可查看输出目录的 `tool.log`。外部工具失败时保留日志和失败状态，返回该工具的非零退出码。
+
 ## 可复现示例 / Synthetic demo
 
 以下测试只生成纯色视频，不需要私人素材：
@@ -55,7 +65,7 @@ python -m unittest -v test_tools
 
 ## 隐私、限制和依赖
 
-脚本处理本地文件，不调用付费 API。离线转写设置 Hugging Face 离线环境变量，仍需提前安装依赖和准备本地模型。执行记录包含输入和工具的本机绝对路径，字幕也可能包含私人信息；公开分享报告前请自行检查。
+脚本处理本地文件，不调用付费 API。离线转写设置 Hugging Face 离线环境变量，仍需提前安装依赖和准备本地模型。执行记录和日志可能包含输入和工具的本机绝对路径，字幕也可能包含私人信息；公开分享报告前请自行检查。
 
 长视频检查会读取所有帧时间戳，因此耗时与内存随视频长度增长。自动切分可能漏检渐变或误判闪光。语音识别可能产生错字或幻觉；不能把转写当作已经核实的原话。
 
