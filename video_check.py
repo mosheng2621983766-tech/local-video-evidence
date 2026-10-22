@@ -2,32 +2,49 @@
 """Inspect video timestamps; numerical agreement is not visual approval."""
 import argparse
 import json
+import math
 from pathlib import Path
 import statistics
 import subprocess
 
 
 def probe(path, args, binary):
-    return json.loads(subprocess.check_output([binary, '-v', 'error', *args, '-of', 'json', str(path)]))
+    command = [binary, '-v', 'error', *args, '-of', 'json', str(path)]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise ValueError('ffprobe was not found; install FFmpeg or use --ffprobe-bin') from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or '').strip()
+        raise ValueError('ffprobe could not read the media: ' + (detail or str(exc))) from exc
+    try:
+        data = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError('ffprobe returned invalid JSON') from exc
+    if not isinstance(data, dict):
+        raise ValueError('ffprobe returned an unexpected response')
+    return data
 
 
 def inspect(path, binary='ffprobe'):
     path = Path(path).expanduser().resolve(strict=True)
     data = probe(path, ['-show_streams', '-show_format'], binary)
-    video = next((s for s in data['streams'] if s['codec_type'] == 'video'), None)
+    video = next((s for s in data.get('streams', []) if s['codec_type'] == 'video'), None)
     if video is None:
         raise ValueError('Input has no video stream')
-    frames = probe(path, ['-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time'], binary)['frames']
+    frames = probe(path, ['-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time'], binary).get('frames', [])
     pts = [float(f['best_effort_timestamp_time']) for f in frames if 'best_effort_timestamp_time' in f]
     if len(pts) != len(frames) or len(pts) < 2:
         raise ValueError('At least two frames with valid timestamps are required')
+    if not all(math.isfinite(t) for t in pts):
+        raise ValueError('Frame timestamps must be finite numbers')
     delta = [b-a for a, b in zip(pts, pts[1:])]
     med = statistics.median(delta)
     tolerance = max(0.0001, med * .005)
     duration = data.get('format', {}).get('duration')
     return {'path': str(path), 'width': video['width'], 'height': video['height'], 'frames': len(pts), 'pts': pts,
             'median_interval': med, 'constant_rate': med > 0 and all(abs(x-med) <= tolerance for x in delta),
-            'strictly_increasing': all(x > 0 for x in delta), 'audio_streams': sum(s['codec_type'] == 'audio' for s in data['streams']),
+            'strictly_increasing': all(x > 0 for x in delta), 'audio_streams': sum(s['codec_type'] == 'audio' for s in data.get('streams', [])),
             'duration': float(duration) if duration is not None else None,
             'rotation': [s['rotation'] for s in video.get('side_data_list', []) if 'rotation' in s]}
 
@@ -47,7 +64,10 @@ def main():
     p.add_argument('--output-video')
     p.add_argument('--report', required=True, type=Path)
     p.add_argument('--ffprobe-bin', default='ffprobe')
+    p.add_argument('--strict', action='store_true', help='With --output-video, return 3 if timing or dimensions differ')
     a = p.parse_args()
+    if a.strict and not a.output_video:
+        p.error('--strict requires --output-video')
     report = a.report.expanduser()
     if report.exists():
         p.error('Report already exists; choose a new path')
@@ -63,6 +83,8 @@ def main():
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         p.exit(1, str(exc) + '\n')
     print(json.dumps(result.get('checks', {k:v for k,v in src.items() if k != 'pts'}), indent=2))
+    if a.strict and not (result['checks']['timing_pass'] and result['checks']['same_dimensions']):
+        return 3
     return 0
 
 
